@@ -55,6 +55,21 @@ The self-fencing watchdog is the part production apps most often get wrong: a pr
 
 ## The failover experiment
 
+The elected primary keeps its role for as long as it keeps checking in — there are no term limits or re-elections. So to see a failover, you have to make the primary go silent. Two ways:
+
+### Option A: Inject a failure (instance keeps running)
+
+Open the **primary instance's console** and pause its check-ins:
+
+```bash
+kill -HUP 1     # pause check-ins — instance goes silent
+kill -USR2 1    # resume — rejoins as a follower
+```
+
+While paused you'll see the full failure sequence in its logs: skipped check-ins, then self-fencing (`DEMOTED — no successful check-in for 36s`), while a secondary logs `PROMOTED` once the platform's deadline passes. Resume it and it rejoins as a follower — the new primary keeps the role.
+
+### Option B: Stop the instance
+
 Stop the primary instance from the portal (or let it crash). Within the `stale_primary_deadline`:
 
 1. The stopped primary's check-ins cease.

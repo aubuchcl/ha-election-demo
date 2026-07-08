@@ -66,6 +66,7 @@ const STATE = {
   lastSuccessfulCheckin: 0,
   workTimer: null,
   batch: 0,
+  paused: false, // when true, we deliberately skip check-ins (failure injection)
 };
 
 function log(message) {
@@ -192,6 +193,11 @@ function doExclusiveWork() {
 // ---- Election check-in loop -----------------------------------------------
 
 async function checkin() {
+  if (STATE.paused) {
+    log("check-in SKIPPED (paused via SIGHUP) — the platform sees this instance as silent");
+    return;
+  }
+
   try {
     const response = await apiRequest("POST", "/v1/ha/election/checkin", {
       electable: true,
@@ -243,6 +249,30 @@ setInterval(() => {
     );
   }
 }, 5_000);
+
+// ---- Failure injection ------------------------------------------------------
+//
+// Simulate a primary that loses contact with the platform WITHOUT
+// stopping the instance. From the instance's console:
+//
+//   kill -HUP 1    -> pause check-ins (this instance goes silent)
+//   kill -USR2 1   -> resume check-ins (rejoins the election)
+//
+// While paused, the fencing watchdog demotes this instance locally
+// at ~80% of the deadline, and the platform promotes a secondary
+// once the full stale_primary_deadline passes. On resume, this
+// instance rejoins as a follower — the new primary keeps the role.
+
+process.on("SIGHUP", () => {
+  STATE.paused = true;
+  log("SIGHUP received — pausing check-ins to simulate failure");
+});
+
+process.on("SIGUSR2", () => {
+  STATE.paused = false;
+  log("SIGUSR2 received — resuming check-ins");
+  checkin();
+});
 
 // ---- Lifecycle ------------------------------------------------------------
 
